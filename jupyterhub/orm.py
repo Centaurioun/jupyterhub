@@ -24,11 +24,12 @@ from sqlalchemy import (
     inspect,
     or_,
     select,
+    text,
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import (
     Session,
     backref,
+    declarative_base,
     interfaces,
     object_session,
     relationship,
@@ -212,6 +213,7 @@ class Group(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(Unicode(255), unique=True)
     users = relationship('User', secondary='user_group_map', backref='groups')
+    properties = Column(JSONDict, default={})
 
     def __repr__(self):
         return "<%s %s (%i users)>" % (
@@ -749,6 +751,7 @@ class APIToken(Hashed, Base):
             session_id=session_id,
             scopes=list(scopes),
         )
+        db.add(orm_token)
         orm_token.token = token
         if user:
             assert user.id is not None
@@ -759,7 +762,6 @@ class APIToken(Hashed, Base):
         if expires_in is not None:
             orm_token.expires_at = cls.now() + timedelta(seconds=expires_in)
 
-        db.add(orm_token)
         db.commit()
         return token
 
@@ -901,11 +903,8 @@ def register_ping_connection(engine):
     """
 
     @event.listens_for(engine, "engine_connect")
-    def ping_connection(connection, branch):
-        if branch:
-            # "branch" refers to a sub-connection of a connection,
-            # we don't want to bother pinging on these.
-            return
+    def ping_connection(connection, branch=None):
+        # TODO: remove unused branch arg when we require sqlalchemy 2.0
 
         # turn off "close with result".  This flag is only used with
         # "connectionless" execution, otherwise will be False in any case
@@ -913,10 +912,11 @@ def register_ping_connection(engine):
         connection.should_close_with_result = False
 
         try:
-            # run a SELECT 1.   use a core select() so that
+            # run a SELECT 1. use a core select() so that
             # the SELECT of a scalar value without a table is
             # appropriately formatted for the backend
-            connection.scalar(select([1]))
+            with connection.begin() as transaction:
+                connection.scalar(select(1))
         except exc.DBAPIError as err:
             # catch SQLAlchemy's DBAPIError, which is a wrapper
             # for the DBAPI's exception.  It includes a .connection_invalidated
@@ -931,7 +931,8 @@ def register_ping_connection(engine):
                 # itself and establish a new connection.  The disconnect detection
                 # here also causes the whole connection pool to be invalidated
                 # so that all stale connections are discarded.
-                connection.scalar(select([1]))
+                with connection.begin() as transaction:
+                    connection.scalar(select(1))
             else:
                 raise
         finally:
@@ -955,7 +956,10 @@ def check_db_revision(engine):
 
     from .dbutil import _temp_alembic_ini
 
-    with _temp_alembic_ini(engine.url) as ini:
+    # alembic needs the password if it's in the URL
+    engine_url = engine.url.render_as_string(hide_password=False)
+
+    with _temp_alembic_ini(engine_url) as ini:
         cfg = alembic.config.Config(ini)
         scripts = ScriptDirectory.from_config(cfg)
         head = scripts.get_heads()[0]
@@ -990,9 +994,10 @@ def check_db_revision(engine):
 
     # check database schema version
     # it should always be defined at this point
-    alembic_revision = engine.execute(
-        'SELECT version_num FROM alembic_version'
-    ).first()[0]
+    with engine.begin() as connection:
+        alembic_revision = connection.execute(
+            text('SELECT version_num FROM alembic_version')
+        ).first()[0]
     if alembic_revision == head:
         app_log.debug("database schema version found: %s", alembic_revision)
     else:
@@ -1009,13 +1014,16 @@ def mysql_large_prefix_check(engine):
     """Check mysql has innodb_large_prefix set"""
     if not str(engine.url).startswith('mysql'):
         return False
-    variables = dict(
-        engine.execute(
-            'show variables where variable_name like '
-            '"innodb_large_prefix" or '
-            'variable_name like "innodb_file_format";'
-        ).fetchall()
-    )
+    with engine.begin() as connection:
+        variables = dict(
+            connection.execute(
+                text(
+                    'show variables where variable_name like '
+                    '"innodb_large_prefix" or '
+                    'variable_name like "innodb_file_format";'
+                )
+            ).fetchall()
+        )
     if (
         variables.get('innodb_file_format', 'Barracuda') == 'Barracuda'
         and variables.get('innodb_large_prefix', 'ON') == 'ON'
@@ -1039,6 +1047,8 @@ def new_session_factory(
 
     elif url.startswith('mysql'):
         kwargs.setdefault('pool_recycle', 60)
+
+    kwargs.setdefault("future", True)
 
     if url.endswith(':memory:'):
         # If we're using an in-memory database, ensure that only one connection

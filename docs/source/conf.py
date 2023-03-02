@@ -34,6 +34,7 @@ extensions = [
     "sphinx-jsonschema",
     "sphinxext.opengraph",
     "sphinxext.rediraffe",
+    "jupyterhub_sphinx_theme",
     "myst_parser",
 ]
 root_doc = "index"
@@ -154,18 +155,13 @@ html_logo = "_static/images/logo/logo.png"
 html_favicon = "_static/images/logo/favicon.ico"
 html_static_path = ["_static"]
 
-html_theme = "pydata_sphinx_theme"
+html_theme = "jupyterhub_sphinx_theme"
 html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
             "url": "https://github.com/jupyterhub/jupyterhub",
-            "icon": "fab fa-github-square",
-        },
-        {
-            "name": "Discourse",
-            "url": "https://discourse.jupyter.org/c/jupyterhub/10",
-            "icon": "fab fa-discourse",
+            "icon": "fa-brands fa-github",
         },
     ],
     "use_edit_page_button": True,
@@ -189,6 +185,7 @@ linkcheck_ignore = [
     "https://github.com/jupyterhub/jupyterhub/pull/",  # too many PRs in changelog
     "https://github.com/jupyterhub/jupyterhub/compare/",  # too many comparisons in changelog
     r"https?://(localhost|127.0.0.1).*",  # ignore localhost references in auto-links
+    r"https://jupyter.chameleoncloud.org",  # FIXME: ignore (presumably) short-term SSL issue
 ]
 linkcheck_anchors_ignore = [
     "/#!",
@@ -201,7 +198,9 @@ linkcheck_anchors_ignore = [
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "tornado": ("https://www.tornadoweb.org/en/stable/", None),
+    "jupyter-server": ("https://jupyter-server.readthedocs.io/en/stable/", None),
 }
+
 # -- Options for the opengraph extension -------------------------------------
 # ref: https://github.com/wpilibsuite/sphinxext-opengraph#options
 #
@@ -213,11 +212,29 @@ ogp_use_first_image = True
 # -- Options for the rediraffe extension -------------------------------------
 # ref: https://github.com/wpilibsuite/sphinxext-rediraffe#readme
 #
-# This extensions help us relocated content without breaking links. If a
-# document is moved internally, a redirect like should be configured below to
+# This extension helps us relocate content without breaking links. If a
+# document is moved internally, a redirect link should be configured as below to
 # help us not break links.
 #
+# The workflow for adding redirects can be as follows:
+# 1. Change "rediraffe_branch" below to point to the commit/ branch you
+#    want to base off the changes.
+# 2. Option 1: run "make rediraffecheckdiff"
+#       a. Analyze the output of this command.
+#       b. Manually add the redirect entries to the "redirects.txt" file.
+#    Option 2: run "make rediraffewritediff"
+#       a. rediraffe will then automatically add the obvious redirects to redirects.txt.
+#       b. Analyze the output of the command for broken links.
+#       c. Check the "redirects.txt" file for any files that were moved/ renamed but are not listed.
+#       d. Manually add the redirects that have been mised by the automatic builder to "redirects.txt".
+#    Option 3: Do not use the commands above and, instead, do everything manually - by taking
+#    note of the files you have moved or renamed and adding them to the "redirects.txt" file.
+#
+# If you are basing changes off another branch/ commit, always change back
+# rediraffe_branch to main before pushing your changes upstream.
+#
 rediraffe_branch = "main"
-rediraffe_redirects = {
-    # "old-file": "new-folder/new-file-name",
-}
+rediraffe_redirects = "redirects.txt"
+# rediraffe_redirects = {
+# "old-file": "new-folder/new-file-name",
+# }
