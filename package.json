@@ -16,7 +16,7 @@
   "devDependencies": {
     "less": "^3.9.0",
     "less-plugin-clean-css": "^1.5.1",
-    "prettier": "^1.16.4"
+    "prettier": "^2.8.0"
   },
   "dependencies": {
     "bootstrap": "^3.4.1",
